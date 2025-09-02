@@ -76,14 +76,29 @@ const userId='user_'+Math.random().toString(36).substr(2,9);
 let ws,localStream,peerConnections=new Map();
 const iceServers=[{urls:['stun:stun.l.google.com:19302']}];
 
-function init(){connectWebSocket();document.getElementById('micBtn').onclick=toggleMic}
+function init(){
+connectWebSocket();
+document.getElementById('micBtn').onclick=toggleMic;
+// Разрешаем аудио при любом клике
+document.addEventListener('click',()=>{
+document.querySelectorAll('audio').forEach(a=>a.play().catch(()=>{}));
+},{passive:true});
+}
 
 function connectWebSocket(){
 const protocol=location.protocol==='https:'?'wss:':'ws:';
 ws=new WebSocket(`${protocol}//${location.host}/ws`);
-ws.onopen=()=>{
+ws.onopen=async()=>{
 updateStatus('Подключено к серверу');
 console.log('Присоединяемся к комнате',roomId,'как',userId);
+try{
+localStream=await navigator.mediaDevices.getUserMedia({audio:true});
+document.getElementById('micBtn').textContent='🎤 Включен';
+document.getElementById('micBtn').className='btn active';
+updateStatus('Микрофон автоматически включен');
+}catch(e){
+console.log('Ошибка автовключения микрофона:',e);
+}
 ws.send(JSON.stringify({type:'join',room_id:roomId,user_id:userId}));
 };
 ws.onmessage=(event)=>{const data=JSON.parse(event.data);handleMessage(data)};
@@ -125,13 +140,9 @@ audio.controls=false;
 document.getElementById('audioContainer').appendChild(audio);
 }
 audio.srcObject=event.streams[0];
-audio.play().then(()=>{
-console.log('Аудио запущено для',peerId);
-updateStatus(`Слышу ${peerId}`);
-}).catch(e=>{
-console.log('Ошибка воспроизведения:',e);
-updateStatus('Ошибка аудио: '+e.message);
-});
+audio.play().catch(()=>{});
+console.log('Аудио элемент создан для',peerId);
+updateStatus(`Получаю аудио от ${peerId}`);
 };
 pc.onicecandidate=(event)=>{if(event.candidate)ws.send(JSON.stringify({type:'ice-candidate',target:peerId,candidate:event.candidate}))};
 if(createOffer){const offer=await pc.createOffer();await pc.setLocalDescription(offer);ws.send(JSON.stringify({type:'offer',target:peerId,offer:offer}))}
@@ -184,7 +195,13 @@ try{
 localStream=await navigator.mediaDevices.getUserMedia({audio:true});
 btn.textContent='🎤 Микрофон включен';btn.className='btn active';
 updateStatus('Микрофон включен');
-peerConnections.forEach(pc=>{localStream.getTracks().forEach(track=>pc.addTrack(track,localStream))})
+peerConnections.forEach(async(pc,peerId)=>{
+console.log('Пересоздаем оффер для',peerId);
+localStream.getTracks().forEach(track=>pc.addTrack(track,localStream));
+const offer=await pc.createOffer();
+await pc.setLocalDescription(offer);
+ws.send(JSON.stringify({type:'offer',target:peerId,offer:offer}));
+})
 }catch(error){updateStatus('Ошибка: '+error.message);btn.textContent='❌ Ошибка';btn.className='btn inactive'}
 }else{
 const audioTrack=localStream.getAudioTracks()[0];
