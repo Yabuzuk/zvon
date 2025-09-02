@@ -88,7 +88,9 @@ ws.onclose=()=>updateStatus('Отключено')
 async function handleMessage(data){
 switch(data.type){
 case 'users':updateUsers(data.users);break;
-case 'user_joined':if(data.user_id!==userId)await createPeerConnection(data.user_id,true);break;
+case 'user_joined':
+updateStatus(`Пользователь ${data.user_id} присоединился`);
+if(data.user_id!==userId)await createPeerConnection(data.user_id,true);break;
 case 'offer':await handleOffer(data);break;
 case 'answer':await handleAnswer(data);break;
 case 'ice-candidate':await handleIceCandidate(data);break;
@@ -98,7 +100,13 @@ async function createPeerConnection(peerId,createOffer){
 const pc=new RTCPeerConnection({iceServers});
 peerConnections.set(peerId,pc);
 if(localStream)localStream.getTracks().forEach(track=>pc.addTrack(track,localStream));
-pc.ontrack=(event)=>console.log('Получен аудио поток от',peerId);
+pc.ontrack=(event)=>{
+console.log('Получен аудио поток от',peerId);
+const audio=new Audio();
+audio.srcObject=event.streams[0];
+audio.play().catch(e=>console.log('Ошибка воспроизведения:',e));
+updateStatus(`Слышу ${peerId}`);
+};
 pc.onicecandidate=(event)=>{if(event.candidate)ws.send(JSON.stringify({type:'ice-candidate',target:peerId,candidate:event.candidate}))};
 if(createOffer){const offer=await pc.createOffer();await pc.setLocalDescription(offer);ws.send(JSON.stringify({type:'offer',target:peerId,offer:offer}))}
 }
@@ -107,7 +115,13 @@ async function handleOffer(data){
 const pc=new RTCPeerConnection({iceServers});
 peerConnections.set(data.from,pc);
 if(localStream)localStream.getTracks().forEach(track=>pc.addTrack(track,localStream));
-pc.ontrack=(event)=>console.log('Получен аудио поток от',data.from);
+pc.ontrack=(event)=>{
+console.log('Получен аудио поток от',data.from);
+const audio=new Audio();
+audio.srcObject=event.streams[0];
+audio.play().catch(e=>console.log('Ошибка воспроизведения:',e));
+updateStatus(`Слышу ${data.from}`);
+};
 pc.onicecandidate=(event)=>{if(event.candidate)ws.send(JSON.stringify({type:'ice-candidate',target:data.from,candidate:event.candidate}))};
 await pc.setRemoteDescription(data.offer);
 const answer=await pc.createAnswer();
@@ -173,6 +187,10 @@ init();
                         self.connections[ws] = {'user_id': user_id, 'room_id': room_id}
                         
                         await self.broadcast_to_room(room_id, {'type': 'user_joined', 'user_id': user_id})
+                        
+                        # Уведомляем всех о новом списке пользователей
+                        users = list(self.rooms[room_id]['users'].keys())
+                        await self.broadcast_to_room(room_id, {'type': 'users', 'users': users})
                         
                         users = list(self.rooms[room_id]['users'].keys())
                         await ws.send_str(json.dumps({'type': 'users', 'users': users}))
