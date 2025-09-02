@@ -208,7 +208,7 @@ init();
         room_id = None
         
         async for msg in ws:
-            if msg.type == web.MsgType.TEXT:
+            if msg.type == web.WSMsgType.TEXT:
                 try:
                     data = json.loads(msg.data)
                     
