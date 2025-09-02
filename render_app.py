@@ -68,6 +68,7 @@ document.getElementById('result').innerHTML=`<div class="room-link"><h3>Комн
 <button class="btn neutral" onclick="leaveRoom()">❌ Покинуть</button>
 </div>
 <div class="users"><h3>Участники:</h3><div id="usersList">Загрузка...</div></div>
+<div id="audioContainer" style="display:none;"></div>
 </div>
 <script>
 const roomId=window.location.pathname.split('/')[2];
@@ -80,14 +81,20 @@ function init(){connectWebSocket();document.getElementById('micBtn').onclick=tog
 function connectWebSocket(){
 const protocol=location.protocol==='https:'?'wss:':'ws:';
 ws=new WebSocket(`${protocol}//${location.host}/ws`);
-ws.onopen=()=>{updateStatus('Подключено');ws.send(JSON.stringify({type:'join',room_id:roomId,user_id:userId}))};
+ws.onopen=()=>{
+updateStatus('Подключено к серверу');
+console.log('Присоединяемся к комнате',roomId,'как',userId);
+ws.send(JSON.stringify({type:'join',room_id:roomId,user_id:userId}));
+};
 ws.onmessage=(event)=>{const data=JSON.parse(event.data);handleMessage(data)};
 ws.onclose=()=>updateStatus('Отключено')
 }
 
 async function handleMessage(data){
 switch(data.type){
-case 'users':updateUsers(data.users);break;
+case 'users':
+console.log('Получен список пользователей:',data.users);
+updateUsers(data.users);break;
 case 'user_joined':
 updateStatus(`Пользователь ${data.user_id} присоединился`);
 if(data.user_id!==userId)await createPeerConnection(data.user_id,true);break;
@@ -102,10 +109,22 @@ peerConnections.set(peerId,pc);
 if(localStream)localStream.getTracks().forEach(track=>pc.addTrack(track,localStream));
 pc.ontrack=(event)=>{
 console.log('Получен аудио поток от',peerId);
-const audio=new Audio();
+let audio=document.getElementById('audio_'+peerId);
+if(!audio){
+audio=document.createElement('audio');
+audio.id='audio_'+peerId;
+audio.autoplay=true;
+audio.controls=false;
+document.getElementById('audioContainer').appendChild(audio);
+}
 audio.srcObject=event.streams[0];
-audio.play().catch(e=>console.log('Ошибка воспроизведения:',e));
+audio.play().then(()=>{
+console.log('Аудио запущено для',peerId);
 updateStatus(`Слышу ${peerId}`);
+}).catch(e=>{
+console.log('Ошибка воспроизведения:',e);
+updateStatus('Ошибка аудио: '+e.message);
+});
 };
 pc.onicecandidate=(event)=>{if(event.candidate)ws.send(JSON.stringify({type:'ice-candidate',target:peerId,candidate:event.candidate}))};
 if(createOffer){const offer=await pc.createOffer();await pc.setLocalDescription(offer);ws.send(JSON.stringify({type:'offer',target:peerId,offer:offer}))}
@@ -117,10 +136,22 @@ peerConnections.set(data.from,pc);
 if(localStream)localStream.getTracks().forEach(track=>pc.addTrack(track,localStream));
 pc.ontrack=(event)=>{
 console.log('Получен аудио поток от',data.from);
-const audio=new Audio();
+let audio=document.getElementById('audio_'+data.from);
+if(!audio){
+audio=document.createElement('audio');
+audio.id='audio_'+data.from;
+audio.autoplay=true;
+audio.controls=false;
+document.getElementById('audioContainer').appendChild(audio);
+}
 audio.srcObject=event.streams[0];
-audio.play().catch(e=>console.log('Ошибка воспроизведения:',e));
+audio.play().then(()=>{
+console.log('Аудио запущено для',data.from);
 updateStatus(`Слышу ${data.from}`);
+}).catch(e=>{
+console.log('Ошибка воспроизведения:',e);
+updateStatus('Ошибка аудио: '+e.message);
+});
 };
 pc.onicecandidate=(event)=>{if(event.candidate)ws.send(JSON.stringify({type:'ice-candidate',target:data.from,candidate:event.candidate}))};
 await pc.setRemoteDescription(data.offer);
@@ -158,7 +189,12 @@ updateStatus(audioTrack.enabled?'Микрофон включен':'Микроф�
 }}}
 
 function updateStatus(message){document.getElementById('status').textContent=message}
-function updateUsers(users){document.getElementById('usersList').innerHTML=users.map(user=>`👤 ${user}`).join('<br>')||'Нет участников'}
+function updateUsers(users){
+console.log('Обновляем список пользователей:',users);
+const list=users.map(user=>`👤 ${user}`).join('<br>');
+document.getElementById('usersList').innerHTML=list||'Нет участников';
+updateStatus(`Участников в комнате: ${users.length}`);
+}
 function leaveRoom(){if(confirm('Покинуть комнату?'))window.close()}
 init();
 </script></body></html>'''
@@ -185,6 +221,7 @@ init();
                         
                         self.rooms[room_id]['users'][user_id] = ws
                         self.connections[ws] = {'user_id': user_id, 'room_id': room_id}
+                        print(f'Пользователь {user_id} присоединился к комнате {room_id}')
                         
                         await self.broadcast_to_room(room_id, {'type': 'user_joined', 'user_id': user_id})
                         
@@ -193,6 +230,7 @@ init();
                         await self.broadcast_to_room(room_id, {'type': 'users', 'users': users})
                         
                         users = list(self.rooms[room_id]['users'].keys())
+                        print(f'Отправляем список пользователей: {users}')
                         await ws.send_str(json.dumps({'type': 'users', 'users': users}))
                     
                     elif data['type'] in ['offer', 'answer', 'ice-candidate']:
