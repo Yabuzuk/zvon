@@ -104,9 +104,16 @@ case 'ice-candidate':await handleIceCandidate(data);break;
 }}
 
 async function createPeerConnection(peerId,createOffer){
+console.log('Создаем соединение с',peerId,'с локальным потоком:',!!localStream);
 const pc=new RTCPeerConnection({iceServers});
 peerConnections.set(peerId,pc);
-if(localStream)localStream.getTracks().forEach(track=>pc.addTrack(track,localStream));
+if(localStream){
+console.log('Добавляем треки к новому соединению');
+localStream.getTracks().forEach(track=>{
+pc.addTrack(track,localStream);
+console.log('Трек добавлен:',track.kind);
+});
+}
 pc.ontrack=(event)=>{
 console.log('Получен аудио поток от',peerId);
 let audio=document.getElementById('audio_'+peerId);
