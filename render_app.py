@@ -192,9 +192,17 @@ async function toggleMic(){
 const btn=document.getElementById('micBtn');
 if(!localStream){
 try{
-localStream=await navigator.mediaDevices.getUserMedia({audio:true});
-btn.textContent='🎤 Микрофон включен';btn.className='btn active';
-updateStatus('Микрофон включен');
+localStream=await navigator.mediaDevices.getUserMedia({
+audio:{
+echoCancellation:true,
+noiseSuppression:true,
+autoGainControl:true,
+sampleRate:48000,
+channelCount:1
+}
+});
+btn.textContent='🎤 HD Микрофон';btn.className='btn active';
+updateStatus('Микрофон HD включен');
 peerConnections.forEach(async(pc,peerId)=>{
 console.log('Пересоздаем оффер для',peerId);
 localStream.getTracks().forEach(track=>pc.addTrack(track,localStream));
